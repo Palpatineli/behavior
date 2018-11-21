@@ -2,7 +2,7 @@
 from typing import Tuple
 
 import numpy as np
-from nuropy2.utils.gaussian import apply_gaussian
+from algorithm.filter.gaussian import apply_gaussian
 from scipy.signal import argrelextrema
 
 _EXTREMA_ORDER = 100
@@ -14,18 +14,17 @@ _PADDING = 5.0
 def old_peak_valley(trace):
     """extract unique peaks. If there are multiple peaks between two valleys only keep the
     highest"""
-    argmax = next(iter(argrelextrema(trace, np.greater_equal, order=_EXTREMA_ORDER)))
+    max_index = next(iter(argrelextrema(trace, np.greater_equal, order=_EXTREMA_ORDER)))
     argmin = next(iter(argrelextrema(trace, np.less_equal, order=_EXTREMA_ORDER)))
-    correspondence = np.searchsorted(argmax, argmin)
+    correspondence = np.searchsorted(max_index, argmin)
     extra_peaks = next(iter(correspondence[np.nonzero(np.diff(correspondence) > 1)]))
-    argmax = np.delete(
-        argmax, extra_peaks +
-                np.greater(trace[argmax[extra_peaks]], trace[argmax[extra_peaks + 1]]).astype(int))
-    argmax = argmax[np.searchsorted(argmax, argmin[0]): np.searchsorted(argmax, argmin[-1])]
-    onset = np.searchsorted(argmin, argmax) - 1
-    height = trace[argmax] - (trace[argmin[onset + 1]] + trace[argmin[onset]]) / 2.0
-    argmax = argmax[height > 0.2]
-    return argmax, argmin
+    bigger_peak = np.greater(trace[max_index[extra_peaks]], trace[max_index[extra_peaks + 1]]).astype(int)
+    max_index = np.delete(max_index, extra_peaks + bigger_peak)
+    max_index = max_index[np.searchsorted(max_index, argmin[0]): np.searchsorted(max_index, argmin[-1])]
+    onset = np.searchsorted(argmin, max_index) - 1
+    height = trace[max_index] - (trace[argmin[onset + 1]] + trace[argmin[onset]]) / 2.0
+    max_index = max_index[height > 0.2]
+    return max_index, argmin
 
 
 def get_t_in_out(trace: np.ndarray, freq: float = 2000.0,

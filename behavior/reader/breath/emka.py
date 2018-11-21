@@ -1,13 +1,13 @@
 """read pasted plethysmograph trace file from emka"""
 import time
 from itertools import islice
-from os import listdir
+from os import listdir, chdir
 from os.path import isdir, join, splitext
-from typing import Iterable, Tuple
+from typing import Iterable, Tuple, Generator
 
 import noformat
 import numpy as np
-from plptn.ui import folder_name
+from uifunc import FolderSelector
 
 
 def _extract_time(value: str) -> float:
@@ -51,21 +51,25 @@ class EmkaDecoder(object):
         return np.array(self._data, dtype='float32')
 
 
-def find_new_files(data_folder: str, ext: str = '.raw') -> Iterable[Tuple[str, str], None, None]:
+def find_new_files(data_folder: str, ext: str = '.raw') -> Generator[Tuple[str, str], None, None]:
     file_list = listdir(data_folder)
+    chdir(data_folder)
     for file_name in file_list:
-        file_name_split = splitext(file_name)
-        source_name = join(data_folder, file_name)
-        target_name = join(data_folder, 'converted', file_name_split[0])
-        if file_name_split[-1] == ext and (not isdir(target_name)):
+        file_base, file_ext = splitext(file_name)
+        source_name = file_name
+        target_name = file_base
+        if file_ext == ext and (not isdir(target_name)):
             yield source_name, target_name
 
 
-def convert():
-    data_folder = folder_name()
-    for file_name, target_name in find_new_files(data_folder):
-        with open(file_name, 'r') as source, noformat.File(target_name, 'w-') as output:
-            decoder = EmkaDecoder(source.read().split('\n'))
-            output.attrs['start'] = decoder.start_time
-            output.attrs['freq'] = decoder.freq
-            output['value'] = decoder.data
+@FolderSelector
+def convert(folder_name: str):
+    for file_name, target_name in find_new_files(folder_name):
+        try:
+            with open(file_name, 'r') as source, noformat.File(target_name, 'w-') as output:
+                decoder = EmkaDecoder(source.read().split('\n'))
+                output.attrs['start'] = decoder.start_time
+                output.attrs['freq'] = decoder.freq
+                output['value'] = decoder.data
+        except IOError as e:
+            print(e)

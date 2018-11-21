@@ -1,13 +1,14 @@
 """read and analyze PhenoMaster file"""
+from os import listdir, makedirs, chdir, rename
+from os.path import join, isfile, splitext
+from collections import defaultdict
+from typing import Iterable, Tuple, Sequence, Generator
 import csv
-from os import listdir
-from os.path import join, isdir, isfile
-from typing import Iterable, Tuple, Sequence
 
 import noformat
 import numpy as np
 import pandas as pd
-from plptn.ui.uiopen import folder_name
+from uifunc import FolderSelector
 
 
 def read_time(time_str: str) -> pd.DateOffset:
@@ -51,17 +52,32 @@ def read(lines: Sequence[str]) -> pd.DataFrame:
     return read_main_table(csv.reader(lines[start_idx + 4: -2], delimiter=';'), animal_ids)
 
 
-def find_new_file(data_folder: str, ext: str = '.CSV') -> Iterable[Tuple[str, str]]:
+def find_new_file(data_folder: str, ext: str = '.CSV') -> Generator[Tuple[str, str], None, None]:
+    chdir(data_folder)
     for case_name in listdir(data_folder):
-        data_file = join(data_folder, case_name, case_name + ext)
-        target_folder = join(data_folder, 'converted', case_name)
-        if isfile(data_file) and (not isdir(target_folder)):
-            yield (data_file, target_folder)
+        if isfile(join(case_name, case_name + ext)) and not isfile(join(case_name, 'value.msg')):
+            yield join(data_folder, case_name, case_name + ext), case_name
 
 
-def convert():
-    for source_name, target_name in find_new_file(folder_name()):
-        with open(source_name, 'r') as source_file, noformat.File(target_name, 'w-') as outfile:
+def rearrange(data_folder: str) -> None:
+    chdir(data_folder)
+    files = defaultdict(list)
+    for file_name in listdir(data_folder):
+        if splitext(file_name)[-1][1:].lower() not in ('csv', 'alyset', 'dat', 'par', 'raw'):
+            continue
+        if isfile(file_name):
+            files[splitext(file_name)[0]].append(file_name)
+    for folder, file_names in files.items():
+        makedirs(join(data_folder, folder), exist_ok=True)
+        for file_name in file_names:
+            rename(file_name, join(folder, file_name))
+
+
+@FolderSelector
+def convert(folder_name: str) -> None:
+    rearrange(folder_name)
+    for source_name, target_name in find_new_file(folder_name):
+        with open(source_name, 'r') as source_file, noformat.File(target_name, 'w+') as outfile:
             data = read(source_file.read().split('\n'))
             outfile.attrs['id'] = [int(identity) for identity in data.columns.levels[0]]
             outfile.attrs['date'] = str(data.index[0]).split()[0]
