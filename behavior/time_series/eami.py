@@ -3,6 +3,10 @@ from typing import Sequence, Tuple, Union, List
 
 import numpy as np
 from scipy.signal import filtfilt, butter
+from matplotlib import pyplot as plt
+from matplotlib.figure import Figure
+import seaborn as sns
+sns.set()
 
 from .algorithm import boolean2index
 
@@ -33,25 +37,25 @@ def eAMI(trace: np.ndarray, freq_range: Rangef = (2.0, 20.0)) -> np.ndarray:
     return result
 
 
-def visualize_eami(x, threshold=0.3, duration_threshold=1000):
-    from matplotlib import pyplot as plt
-    import seaborn as sns
-    sns.set()
+def visualize_eami(x, threshold=0.3, duration_threshold=1000) -> Figure:
     result = eAMI(x, freq_range=(2, 20))
     time = np.arange(len(x)) / 2000
-    plt.plot(time, x - x.mean(), 'b')
-    plt.plot(time, np.minimum(result, 2.0), 'g')
-    plt.plot((0, len(x) / 2000), [threshold] * 2, 'r')
+    fig, ax = plt.subplots()
+    raw = ax.plot(time, x - x.mean(), 'b')[0]
+    eami = ax.plot(time, np.minimum(result, 2.0), 'g')[0]
+    threshold_line = ax.plot((0, len(x) / 2000), [threshold] * 2, 'r')[0]
     triggered = np.zeros(len(x))
     idx, duration = boolean2index(result > threshold)
     idx = idx[duration > duration_threshold]
     duration = duration[duration > duration_threshold]
     for start, end in zip(idx, idx + duration):
         triggered[start: end] = min(threshold * 1.5, 1.0)
-    plt.plot(time, triggered, 'cyan')
-    plt.xlabel('time (s)')
-    plt.ylabel('air flow / eami score (a.u.)')
-    plt.show()
+    pauses = ax.plot(time, triggered, 'cyan')[0]
+    ax.set_xlabel('time (s)')
+    ax.set_ylabel('air flow / eami score (a.u.)')
+    ax.legend([raw, eami, threshold_line, pauses], ["raw traces", "eAMI score", "threshold", "detected pauses"])
+    fig.show()
+    return fig
 
 
 def pause_count(data: MutableMapping, eami_thresh: int = 0.5, length_thresh: int = 600) -> np.int64:

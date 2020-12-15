@@ -1,2 +1,7 @@
 from .cage_table import get_case
-from .main import emka_save
+try:
+    from .main import emka_save
+except (ValueError, ImportError):
+    emka_save = None
+
+__all__ = ['get_case']

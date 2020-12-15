@@ -5,8 +5,7 @@ from datetime import datetime
 import openpyxl
 from openpyxl.cell.cell import Cell
 
-FILE_PATH = "/home/palpatine/Dropbox/project/animal-management/Mouse Management.xlsx"
-
+FILE_PATH = "/home/palpatine/Sync/project/2016-mecp2-bumetanide/data/Mouse Management.xlsx"
 
 def _date_digest(data_in: Union[datetime, float]) -> datetime:
     if isinstance(data_in, datetime):

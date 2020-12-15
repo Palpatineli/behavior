@@ -1,9 +1,9 @@
 {
     "result_table": {
-        "breath_folder": "~/Dropbox/data/2016-natural-behavior/emka",
-        "motion_folder": "~/Dropbox/data/2016-natural-behavior/phenomaster",
-        "maze_folder": "~/Dropbox/data/2016-natural-behavior/maze",
-        "animal_config": "~/Dropbox/project/animal-management/Mouse Management.xlsx",
-        "group_config": "~/Dropbox/data/2016-mecp2-drugs/animals.json"
+        "breath_folder": "~/Sync/project/2016-mecp2-bumetanide/data/emka",
+        "motion_folder": "~/Sync/project/2016-mecp2-bumetanide/data/phenomaster",
+        "maze_folder": "~/Sync/project/2016-mecp2-bumetanide/data/plusmaze",
+        "animal_config": "~/Sync/project/2016-mecp2-bumetanide/data/Mouse Management.xlsx",
+        "group_config": "~/Sync/project/2016-mecp2-bumetanide/data/animals.json"
     }
 }

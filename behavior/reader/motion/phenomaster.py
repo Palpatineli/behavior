@@ -1,97 +1,92 @@
-"""read and analyze PhenoMaster file"""
-from os import listdir, makedirs, chdir, rename
-from os.path import join, isfile, splitext
-from collections import defaultdict
-from typing import Iterable, Tuple, Sequence, Generator
-import csv
-
-import noformat
+from typing import List, Dict, Sequence, Iterable
+from os import makedirs, scandir, DirEntry
+from os.path import splitext, join, dirname
 import numpy as np
-import pandas as pd
+
 from uifunc import FolderSelector
 
-
-def read_time(time_str: str) -> pd.DateOffset:
-    hour, minute = time_str.split(':')
-    return pd.DateOffset(hours=int(hour), minutes=int(minute))
-
-
-def read_header(table: Iterable) -> list:
-    animal_ids = []
-    for row in table:
-        if row:
-            animal_ids.append(int(row[1]))
-    return animal_ids
-
-
-def read_main_table(table: Iterable, animal_ids: list) -> pd.DataFrame:
-    """read exported phenomaster table and convert it to pandas DataFrame with mice in columns and
-    per minute readings in rows"""
-    header = pd.MultiIndex(levels=[animal_ids, ['XT', 'XA', 'XF']],
-                           labels=[np.repeat(range(len(animal_ids)), 3),
-                                   np.tile(range(3), [len(animal_ids)])])
-    data = []
-    current_date = None
-    timestamps = []
-    row_length = 2 + len(animal_ids) * 3
-    for row in table:
-        if row[0]:
-            current_date = pd.to_datetime(row[0], dayfirst=True)
-        timestamps.append(current_date + read_time(row[1]))
-        data.append(list(map(int, row[2:row_length])))
-    time_idx = pd.Index(data=timestamps, name='time')
-    return pd.DataFrame(data=np.array(data, dtype='uint16'), index=time_idx, columns=header)
-
-
-def read(lines: Sequence[str]) -> pd.DataFrame:
-    start_idx = 2  # find the start of main table
-    for start_idx in range(2, 20):
-        if len(lines[start_idx]) < 1:
-            break
-    animal_ids = read_header(csv.reader(lines[3: start_idx], delimiter=';'))
-    return read_main_table(csv.reader(lines[start_idx + 4: -2], delimiter=';'), animal_ids)
-
-
-def find_new_file(data_folder: str, ext: str = '.CSV') -> Generator[Tuple[str, str], None, None]:
-    chdir(data_folder)
-    for case_name in listdir(data_folder):
-        if isfile(join(case_name, case_name + ext)) and not isfile(join(case_name, 'value.msg')):
-            yield join(data_folder, case_name, case_name + ext), case_name
-
-
-def rearrange(data_folder: str) -> None:
-    chdir(data_folder)
-    files = defaultdict(list)
-    for file_name in listdir(data_folder):
-        if splitext(file_name)[-1][1:].lower() not in ('csv', 'alyset', 'dat', 'par', 'raw'):
-            continue
-        if isfile(file_name):
-            files[splitext(file_name)[0]].append(file_name)
-    for folder, file_names in files.items():
-        makedirs(join(data_folder, folder), exist_ok=True)
-        for file_name in file_names:
-            rename(file_name, join(folder, file_name))
-
-
-@FolderSelector
+@FolderSelector  # only public interface
 def convert(folder_name: str) -> None:
-    rearrange(folder_name)
-    for source_name, target_name in find_new_file(folder_name):
-        with open(source_name, 'r') as source_file, noformat.File(target_name, 'w+') as outfile:
-            data = read(source_file.read().split('\n'))
-            outfile.attrs['id'] = [int(identity) for identity in data.columns.levels[0]]
-            outfile.attrs['date'] = str(data.index[0]).split()[0]
-            outfile['value'] = data
+    for file in scandir(folder_name):
+        if file.is_file() and splitext(file.name)[-1][1:].lower() in ("csv", "raw"):
+            convert_data(file)
+        elif file.is_file() and splitext(file.name)[-1].lower().startswith('.txt'):
+            if file.stat().st_size > 1E7:
+                convert_data(file)
 
+def convert_data(file_entry: DirEntry) -> None:
+    """convert csv data to pandas msgpack"""
+    with open(file_entry.path, 'r') as fp:
+        try:
+            data = read(fp.read())
+        except IndexError as e:
+            print(file_entry.name)
+            raise e
+    for animal_id, animal_data in data.items():
+        base_folder = dirname(dirname(file_entry.path))
+        makedirs(join(base_folder, animal_id), exist_ok=True)
+        np.savez_compressed(join(base_folder, animal_id, splitext(file_entry.name)[0]), **animal_data)
 
-def rename_col(x: noformat.File, old_name: int, new_name: int) -> noformat.File:
-    ids = x.attrs['id']
-    ids[ids.index(old_name)] = new_name
-    x.attrs['id'] = ids
-    data = x['value']
-    id_level, type_level = data.columns.levels
-    id_level = list(id_level)
-    id_level[id_level.index(old_name)] = new_name
-    data.columns.set_levels([id_level, type_level], inplace=True)
-    x['value'] = data
-    return x
+def read(csv_file: str) -> Dict[str, Dict[str, np.ndarray]]:
+    lines = csv_file.split('\n')
+    animal_ids: List[str] = list()
+    cage_ids: List[int] = list()
+    for line in lines[3: 8]:
+        if len(line) < 1:
+            break
+        cage_id, animal_id = line.split(';')[0: 2]
+        cage_ids.append(int(cage_id))
+        animal_ids.append(animal_id)
+    animal_no = len(animal_ids)
+    if lines[4 + animal_no].split(';')[2].startswith("Animal No"):  # saved as long form
+        return dict(zip(animal_ids, _read_long_form(lines[4 + animal_no:], cage_ids)))
+    else:  # saved as wide form
+        try:
+            return dict(zip(animal_ids, _read_wide_form(lines[4 + animal_no:], cage_ids)))
+        except ValueError as e:
+            print("animals: ", animal_ids)
+            print("cages: ", cage_ids)
+            raise e
+
+def _read_long_form(lines: Sequence[str], cage_ids: List[int]) -> Iterable[Dict[str, np.ndarray]]:
+    results: List[List[List[int]]] = [list() for _ in range(max(cage_ids))]
+    time_list: List[int] = list()
+    starting_cage = min(cage_ids) - 1
+    for line_str in lines[2:]:
+        line = line_str.split(';')
+        if not any(line):
+            continue
+        cage_id = int(line[3]) - 1
+        if cage_id == starting_cage:
+            time_list.append(_read_time(line[1]))
+        try:
+            results[cage_id].append([int(x) for x in line[4: 7]])
+        except IndexError as e:
+            print(line, len(results), cage_id)
+            raise e
+    time = np.array(time_list)
+    time[time < time[0]] += 1440
+    for result in results:
+        if len(result) > 0:
+            result = np.asarray(result).T
+            yield {'XT': result[0], 'XA': result[1], 'XF': result[2], 'time': time}
+
+def _read_wide_form(lines: Sequence[str], cage_ids: List[int]) -> Iterable[Dict[str, np.ndarray]]:
+    time_list: List[int] = list()
+    result: List[List[int]] = list()
+    animal_no = len(cage_ids)
+    for line_str in lines[3:]:
+        line = line_str.split(';')
+        if all([not x for x in line]):
+            continue
+        time_list.append(_read_time(line[1]))
+        result.append([int(x) for x in line[2: animal_no * 3 + 2]])
+    results = iter(np.array(result).T)
+    time = np.array(time_list)
+    time[time < time[0]] += 1440
+    for _ in range(animal_no):
+        yield {'XT': next(results), 'XA': next(results), 'XF': next(results), 'time': time}
+
+def _read_time(time_str: str) -> int:
+    hour, minute = time_str.split(':')
+    return int(hour) * 60 + int(minute)

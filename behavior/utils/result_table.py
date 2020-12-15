@@ -1,25 +1,29 @@
 """auto-generate case list for groups"""
+from typing import List, Tuple, Optional, Callable, Union, Dict, Sequence
+from pathlib import Path
 import json
 from collections import defaultdict
 from datetime import datetime
 from os import listdir, chdir
 from os.path import join, isdir
-from typing import List, Tuple, Optional, Callable, Union, Dict, Iterable
 
 import numpy as np
 import pandas as pd
 from noformat import File, isFile
 
 from .cage_table import Animals
-from ..utils.config import config as _config
-config = _config['result_table']
 
 Real = Union[int, float]
 _GENOTYPES = {0: 'unknown', 1: 'wt', 2: 'ko', 3: 'wt', 4: 'ko'}
 _EXPERIMENT_DATES = [28, 42, 56]
 
+proj_folder = Path("~/Sync/project/2016-mecp2-bumetanide").expanduser()
+grouping = json.load(proj_folder.joinpath("data", "index", "grouping.json").open("r"))
+res = list()
+for key, value in grouping.items():
+    res.append()
 
-def _approximate(number: Real, target: Iterable[Real], tolerance: Real) -> Optional[Real]:
+def _approximate(number: Real, target: Sequence[Real], tolerance: Real) -> Optional[Real]:
     target = np.asarray(target)
     index = np.searchsorted(target, [number])
     if len(index) == 1:
@@ -58,7 +62,7 @@ def _decode_emka_naming(folder: str) -> IDs:
 
 
 def _find_exp_file(index: pd.MultiIndex, cage_info: Animals, ids: IDs,
-                   dates: Iterable[int], tolerance: int=4) -> pd.DataFrame:
+                   dates: Sequence[int], tolerance: int = 4) -> pd.DataFrame:
     result = pd.DataFrame(columns=dates, index=index)
     for case_id in ids:
         if case_id not in index:
@@ -70,8 +74,8 @@ def _find_exp_file(index: pd.MultiIndex, cage_info: Animals, ids: IDs,
     return result
 
 
-def exp_table(folder: str, func: Callable[[str], IDs], grouping: str=config['group_config'],
-              experiment_dates: List[int]=_EXPERIMENT_DATES) -> pd.DataFrame:
+def exp_table(folder: str, func: Callable[[str], IDs], grouping: str = config['group_config'],
+              experiment_dates: List[int] = _EXPERIMENT_DATES) -> pd.DataFrame:
     """get a table of experiments done based on folder and animal_id decoder"""
     def read_grouping(struct: Dict[str, Tuple[str, str]]) -> List[Tuple[Tuple[int, int], str]]:
         return [((int(cage), int(mouse)), key) for key, value in struct.items() for cage, mouse in value]
@@ -95,7 +99,7 @@ def find_grouping(data_folder: str, func: Callable[[str], IDs]):
     return result
 
 
-def breath_exp(experiment_dates: List[int]=_EXPERIMENT_DATES, grouping: str=config['group_config']) -> pd.DataFrame:
+def breath_exp(experiment_dates: List[int] = _EXPERIMENT_DATES, grouping: str = config['group_config']) -> pd.DataFrame:
     return exp_table(config['breath_folder'], _decode_emka_naming, grouping, experiment_dates)
 
 
@@ -103,23 +107,28 @@ def breath_grouping() -> pd.DataFrame:
     return find_grouping(config['breath_folder'], _decode_emka_naming)
 
 
-def motion_exp(experiment_dates: List[int]=_EXPERIMENT_DATES, grouping: str=config['group_config']) -> pd.DataFrame:
+def motion_exp(experiment_dates: List[int] = _EXPERIMENT_DATES, grouping: str = config['group_config']) -> pd.DataFrame:
     return exp_table(config['motion_folder'], _decode_pheno_id, grouping, experiment_dates)
 
 
-def filter_by_col(table: pd.DataFrame, cols: List[Union[List, str, int]]) -> pd.DataFrame:
-    result = table.copy()  # type: pd.DataFrame
-    new_cols = list()
+def filter_by_col(table: pd.DataFrame, cols: List[Union[List[Union[str, int]], str, int]]) -> pd.DataFrame:
+    """Filter a dataframe, only include the data columns listed in cols
+    Args:
+        table: dataframe to filter
+        cols: a list of either str or int, can include a tuple of int or str. When there is a tuple,
+            then the column is indexed by either item in the tuple. If multiple columns exist in the tuple,
+            the left most one wins.
+    Returns:
+        filtered dataframe
+    """
+    result: List[pd.Series] = list()
     for col in cols:
-        if (isinstance(col, (list, tuple))) and len(col) > 1:
-            temp = table[col[0]]
-            for item_idx in col[1:]:
-                open_idx = temp.isnull()
-                temp[open_idx] = result[item_idx][open_idx]
-                result.drop(item_idx, 1)
-            result[col[0]] = temp
-            new_cols.append(col[0])
+        if isinstance(col, (str, int)):
+            result.append(table[col])
         else:
-            new_cols.append(col)
-    result = result.loc[:, new_cols]
-    return result.dropna()
+            temp = pd.Series(np.nan, index=table.index, name=col[0])
+            for col_item in col:
+                if col_item in table:
+                    temp[temp.isna()] = table[col_item][temp.isna()]
+            result.append(temp)
+    return pd.concat(result, axis=1)

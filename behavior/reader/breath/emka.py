@@ -1,9 +1,9 @@
 """read pasted plethysmograph trace file from emka"""
+from typing import Tuple, Generator, List
 import time
 from itertools import islice
-from os import listdir, chdir
-from os.path import isdir, join, splitext
-from typing import Iterable, Tuple, Generator
+from os import scandir, chdir
+from os.path import splitext
 
 import noformat
 import numpy as np
@@ -22,7 +22,7 @@ class EmkaDecoder(object):
 
     def __init__(self, lines):
         self.start_time = None
-        self._data = []
+        self._data: List[float] = list()
         self.lines = lines
         self.line_reader = self.header_reader
         for line in self.lines:
@@ -51,14 +51,14 @@ class EmkaDecoder(object):
         return np.array(self._data, dtype='float32')
 
 
-def find_new_files(data_folder: str, ext: str = '.raw') -> Generator[Tuple[str, str], None, None]:
-    file_list = listdir(data_folder)
+def find_new_files(data_folder: str, ext: List[str] = ['.raw', '.txt']) -> Generator[Tuple[str, str], None, None]:
+    file_list = scandir(data_folder)
     chdir(data_folder)
-    for file_name in file_list:
-        file_base, file_ext = splitext(file_name)
-        source_name = file_name
+    for file_entry in file_list:
+        file_base, file_ext = splitext(file_entry.path)
+        source_name = file_entry.path
         target_name = file_base
-        if file_ext == ext and (not isdir(target_name)):
+        if file_ext in ext and file_entry.is_file() and ((file_entry.stat().st_size >> 20) > 25):
             yield source_name, target_name
 
 

@@ -9,7 +9,7 @@ def _extract_name(content: str) -> str:
     return splitext(file_path[file_path.rfind("\\") + 1:])[0]
 
 def _is_valid_name(name: str) -> bool:
-    name.replace('-', '_')
+    name = name.replace('-', '_')
     if '_' not in name:
         return False
     date = name.split('_')[-1]
